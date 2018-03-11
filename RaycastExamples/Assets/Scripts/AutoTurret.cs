@@ -19,15 +19,15 @@ public class AutoTurret : MonoBehaviour
 		[Range(0.1f, 1f)]
 		[HideInInspector] public float m_rateOfFire = 0.5f;				// how faster the turret fires. time in seconds.
 		[HideInInspector] public float m_lastShootTime;					// time sinc last shoot.
-		[HideInInspector] public float m_bulletStrengh = 2f;			// strengh of the bullet. To apply a impulse on hit.
+		[HideInInspector] public float m_bulletStrengh = 4f;			// strengh of the bullet. To apply a impulse on hit.
 		public Transform m_barel;										// gun barrel to point at target.
 		public Transform m_barelTip;									// tip of the gun barrel.
 		public GameObject m_muzzleFire;									// muzzle fire effect obj.
 	}
 	[SerializeField] private Gun m_gun;
 
-	private Collider[] m_colliders;										// collider detected balls.
-	private int m_closerColliderIndex;
+	public Collider[] m_colliders;										// collider detected balls.
+	private int m_nearestColliderIndex;
 	private float m_targetDistance;										// turret target distance at the raycast moment.
 	private RaycastHit m_rayHit;
 	private Ray m_ray;													// Common raycast ray.
@@ -37,31 +37,42 @@ public class AutoTurret : MonoBehaviour
 	private void OnDrawGizmos()
 	{
 		Gizmos.color = Color.red;
-		Gizmos.DrawWireSphere(transform.position, m_viewRange);
+		Gizmos.DrawWireSphere(m_gun.m_barelTip.position, m_viewRange);
+	}
+
+	private void Start()
+	{
+		if (m_colliders == null || m_colliders.Length <= 0)
+		{
+			return;
+		}
+
+		FindNearestTarget();
+
 	}
 
 	void Update()
 	{
+		if (m_colliders == null || m_colliders.Length <= 0)
+		{
+			return;
+		}
+
 		// Shot at target.
 		if (m_gun.m_lastShootTime >= m_gun.m_rateOfFire)
 		{
-			m_colliders = Physics.OverlapSphere(m_gun.m_barelTip.position, m_viewRange, m_targetsLayer, QueryTriggerInteraction.Collide);
+			FindNearestTarget();
 
-			FindNearestTarget(m_colliders);
-
-			if (m_colliders != null)
+			m_ray = new Ray(m_gun.m_barelTip.position, m_colliders[m_nearestColliderIndex].transform.position - m_gun.m_barelTip.transform.position);
+			if (m_colliders[m_nearestColliderIndex].Raycast(m_ray, out m_rayHit, m_viewRange))
 			{
-				m_ray = new Ray(m_gun.m_barelTip.position, m_colliders[m_closerColliderIndex].transform.position - m_gun.m_barelTip.transform.position);
-				if (m_colliders[m_closerColliderIndex].Raycast(m_ray, out m_rayHit, m_viewRange))
+				if (m_rayHit.rigidbody)
 				{
-					if (m_rayHit.rigidbody)
-					{
-						Debug.Log("Object hit name: " + m_rayHit.collider.name +  ", distance from turret: " + m_targetDistance);
-						Debug.DrawLine(m_gun.m_barelTip.position, m_colliders[m_closerColliderIndex].transform.position, Color.magenta, 2f);
-						m_rayHit.rigidbody.AddForce((m_rayHit.rigidbody.position - transform.position) * m_gun.m_bulletStrengh, ForceMode.Impulse);
-						m_gun.m_lastShootTime = 0;
-						StartCoroutine(MuzzleFire());
-					}
+					Debug.Log("Object hit name: " + m_rayHit.collider.name +  ", distance from turret: " + m_targetDistance);
+					Debug.DrawLine(m_gun.m_barelTip.position, m_colliders[m_nearestColliderIndex].transform.position, Color.magenta, 2f);
+					m_rayHit.rigidbody.AddForce((m_rayHit.rigidbody.position - transform.position) * m_gun.m_bulletStrengh, ForceMode.Impulse);
+					m_gun.m_lastShootTime = 0;
+					StartCoroutine(MuzzleFireEffect());
 				}
 			}
 		}
@@ -71,37 +82,34 @@ public class AutoTurret : MonoBehaviour
 		}
 
 		// Point to target
-		if (m_colliders != null && m_colliders.Length > 0 && m_closerColliderIndex < m_colliders.Length)
-		{
-			Debug.DrawRay(m_gun.m_barelTip.position, m_colliders[m_closerColliderIndex].transform.position - m_gun.m_barelTip.transform.position, Color.red);
-			m_gun.m_barel.LookAt(m_colliders[m_closerColliderIndex].transform);
-			m_textDistance.text = m_targetDistance.ToString("#.##");
-		}
+		Debug.DrawRay(m_gun.m_barelTip.position, Vector3.Normalize(m_colliders[m_nearestColliderIndex].transform.position - m_gun.m_barelTip.transform.position) * m_viewRange, Color.red);
+		m_gun.m_barel.LookAt(m_colliders[m_nearestColliderIndex].transform);
+		m_textDistance.text = m_targetDistance.ToString("0.00");
 
 
 	}
 
-	/// <summary>
-	/// Find nearest index from a colliders list.
-	/// </summary>
-	private void FindNearestTarget(Collider[] m_colliders)
+	/// <summary> 
+	/// Find nearest index from a colliders list. 
+	/// </summary> 
+	private void FindNearestTarget()
 	{
-		m_closerColliderIndex = 0;
+		m_nearestColliderIndex = 0;
 		for (int i = 0; i < m_colliders.Length; i++)
 		{
-			// Check if its the closest object.
+			// Check if its the closest object. 
 			if (
 			Vector3.Distance(m_gun.m_barelTip.transform.position, m_colliders[i].transform.position) <
-			Vector3.Distance(m_gun.m_barelTip.transform.position, m_colliders[m_closerColliderIndex].transform.position)
+			Vector3.Distance(m_gun.m_barelTip.transform.position, m_colliders[m_nearestColliderIndex].transform.position)
 			)
 			{
-				m_closerColliderIndex = i;
-				m_targetDistance = Vector3.Distance(m_gun.m_barelTip.transform.position, m_colliders[m_closerColliderIndex].transform.position);
+				m_nearestColliderIndex = i;
+				m_targetDistance = Vector3.Distance(m_gun.m_barelTip.transform.position, m_colliders[m_nearestColliderIndex].transform.position);
 			}
 		}
 	}
 
-	private IEnumerator MuzzleFire()
+	private IEnumerator MuzzleFireEffect()
 	{
 		m_gun.m_muzzleFire.SetActive(true);
 		// I know its better to cache this WaitForSeconds, but just using that way to simplify things.
